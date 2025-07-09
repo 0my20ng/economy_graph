@@ -150,17 +150,29 @@ def simulate_market(ax, dq1, dp1, dq2, dp2, sq1, sp1, sq2, sp2, tax=0, subsidy=0
     ax.set_ylim(0, max(a, supply_prices.max()) * 1.1)
 
 # ✅ 가격 탄력성 그래프 그리기 함수
-def simulate_elasticity(ax):
+def simulate_elasticity(ax, a_val, b_val):
     ax.clear()
-    p1, p2 = 20, 30
-    q1, q2 = 80, 60
-    E = price_elasticity(p1, p2, q1, q2)
-    ax.plot([q1, q2], [p1, p2], marker='o', color='orange', label=f'탄력성 E = {E:.2f}')
-    ax.set_title('상품 A의 가격 탄력성')
+    a = float(a_val)
+    b = float(b_val)
+
+    quantities = np.linspace(1, a / b - 1, 100)
+    prices = a - b * quantities
+
+    ax.plot(quantities, prices, label=f'수요곡선: P = {a} - {b}Q', color='red')
+
+    for q in [quantities[20], quantities[50], quantities[80]]:
+        p = a - b * q
+        dq = 2
+        dp = b * dq
+        E = price_elasticity(p, p + dp, q, q - dq)
+        ax.annotate(f"E={E:.2f}", xy=(q, p), xytext=(q, p + 5),
+                    arrowprops=dict(arrowstyle="->", color='gray'), fontsize=9)
+
+    ax.set_title('수요곡선과 가격 탄력성')
     ax.set_xlabel('수량 (Q)')
     ax.set_ylabel('가격 (P)')
-    ax.grid(True)
     ax.legend()
+    ax.grid(True)
 
 # ✅ 비교 우위 그래프 그리기 함수
 def draw_comparative_advantage(ax, data, textbox):
@@ -195,6 +207,7 @@ def run_gui():
             market_frame.grid(row=1, column=0, columnspan=2, sticky='w')
             control_frame.grid(row=11, column=0, columnspan=2, sticky='w')
             compare_frame.grid_remove()
+            input_frame.grid_remove()
             result_text.grid_remove()
 
         elif graph_type == '비교 우위':
@@ -202,8 +215,10 @@ def run_gui():
             result_text.grid(row=2, column=0, columnspan=2, pady=10)
             market_frame.grid_remove()
             control_frame.grid_remove()
+            input_frame.grid_remove()
 
         elif graph_type == '가격 탄력성':
+            input_frame.grid(row=1, column=0, columnspan=2, sticky='w')
             market_frame.grid_remove()
             compare_frame.grid_remove()
             control_frame.grid_remove()
@@ -218,7 +233,9 @@ def run_gui():
                 draw_comparative_advantage(ax, data, result_text)
 
             elif graph_type == '가격 탄력성':
-                simulate_elasticity(ax)
+                a_val = a_entry.get()
+                b_val = b_entry.get()
+                simulate_elasticity(ax, a_val, b_val)
 
             else:
                 vals = {k: float(market_entries[k].get()) for k in market_entries}
@@ -268,6 +285,21 @@ def run_gui():
     control_price_entry = tk.Entry(control_frame)
     control_price_entry.insert(0, '0')
     control_price_entry.grid(row=12, column=1, padx=5, pady=2)
+
+    # ✅ 가격 탄력성 입력 창
+    input_frame = tk.Frame(root)
+    input_frame.grid(row=0, column=0, sticky='nw', padx=10, pady=10)
+
+    tk.Label(input_frame, text="수요곡선 P = a - bQ 에서 a 입력:").grid(row=0, column=0, sticky='w')
+    a_entry = tk.Entry(input_frame)
+    a_entry.insert(0, "100")
+    a_entry.grid(row=0, column=1)
+
+    tk.Label(input_frame, text="수요곡선 기울기 b 입력:").grid(row=1, column=0, sticky='w')
+    b_entry = tk.Entry(input_frame)
+    b_entry.insert(0, "1")
+    b_entry.grid(row=1, column=1)
+
 
     # ✅ 비교 우위 입력 창
     compare_frame = tk.Frame(root)
