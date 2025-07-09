@@ -1,0 +1,218 @@
+# ✅ 수요곡선 계산 오류 완전 수정 버전
+# 수요곡선과 공급곡선이 올바르게 표시되도록 수정
+
+import tkinter as tk
+from tkinter import messagebox
+from tkinter import ttk
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.patches import Polygon
+
+plt.rcParams['font.family'] = 'Malgun Gothic'
+plt.rcParams['axes.unicode_minus'] = False
+
+# ✅ 잉여 계산 함수
+def consumer_surplus(a, b, p_eq, q_eq):
+    """소비자 잉여 계산: a는 수요곡선의 y절편, b는 수요곡선의 기울기(절댓값)"""
+    return 0.5 * q_eq * (a - p_eq)
+
+def producer_surplus(c, d, p_eq, q_eq):
+    """생산자 잉여 계산: c는 공급곡선의 y절편, d는 공급곡선의 기울기"""
+    return 0.5 * q_eq * (p_eq - c)
+
+def calculate_surplus_shortage(a, b, c, d, control_price):
+    """가격통제 시 초과수요/공급 계산"""
+    qd = (a - control_price) / b if b > 0 else 0
+    qs = (control_price - c) / d if d > 0 else 0
+    qd = max(0, qd)
+    qs = max(0, qs)
+    
+    if qd > qs:
+        return "초과 수요", qd - qs
+    elif qs > qd:
+        return "초과 공급", qs - qd
+    else:
+        return "균형", 0
+
+# ✅ 시장 시뮬레이션 함수 (완전 수정)
+def simulate_market(ax, dq1, dp1, dq2, dp2, sq1, sp1, sq2, sp2, tax=0, subsidy=0, price_control_type=None, price_control=None):
+    ax.clear()
+
+    # 🔧 수요곡선 파라미터 계산 (P = a - bQ 형태)
+    if dq2 != dq1:
+        # 수요곡선의 기울기 (음수여야 함)
+        demand_slope = (dp2 - dp1) / (dq2 - dq1)
+        b = abs(demand_slope)  # 기울기의 절댓값
+        # y절편 계산: 수요곡선이 y축과 만나는 점
+        a = dp1 + b * dq1
+    else:
+        b = 1
+        a = dp1
+
+    # 🔧 공급곡선 파라미터 계산 (P = c + dQ 형태)
+    if sq2 != sq1:
+        d = (sp2 - sp1) / (sq2 - sq1)
+        d = abs(d)  # 기울기는 양수
+        c = sp1 - d * sq1
+    else:
+        d = 1
+        c = sp1
+
+    # 균형점 계산
+    net_tax = tax - subsidy
+    
+    # 균형점: 수요곡선과 공급곡선의 교점
+    # a - bQ = c + dQ 를 Q에 대해 풀면
+    denominator = b + d
+    if denominator > 0:
+        q_eq = (a - c) / denominator
+        p_eq = a - b * q_eq
+        
+        # 정부개입 후 균형점
+        q_new = (a - c - d * net_tax) / denominator
+        p_new = a - b * q_new
+    else:
+        q_eq = p_eq = q_new = p_new = 0
+
+    # 그래프용 데이터 생성
+    max_q = max(q_eq, q_new if tax != 0 or subsidy != 0 else 0, 100)
+    quantities = np.linspace(0, max_q * 1.5, 500)
+    
+    # 수요곡선: P = a - bQ
+    demand_prices = a - b * quantities
+    
+    # 공급곡선: P = c + dQ
+    supply_prices = c + d * quantities
+    
+    # 정부개입 후 공급곡선: P = c + dQ + 세금
+    supply_prices_new = c + d * quantities + net_tax
+
+    # 음수 가격 제거
+    demand_prices = np.maximum(demand_prices, 0)
+    supply_prices = np.maximum(supply_prices, 0)
+    supply_prices_new = np.maximum(supply_prices_new, 0)
+
+    # 그래프 그리기
+    ax.plot(quantities, demand_prices, label='수요곡선', color='blue', linewidth=2)
+    ax.plot(quantities, supply_prices, label='공급곡선', color='green', linewidth=2)
+    
+    if tax != 0 or subsidy != 0:
+        ax.plot(quantities, supply_prices_new, '--', label='정부개입 후 공급곡선', color='red', linewidth=2)
+
+    # 균형점 표시
+    if q_eq > 0 and p_eq > 0:
+        ax.scatter(q_eq, p_eq, color='purple', s=100, zorder=5, label=f'원래 균형 ({q_eq:.1f}, {p_eq:.1f})')
+    
+    if (tax != 0 or subsidy != 0) and q_new > 0 and p_new > 0:
+        ax.scatter(q_new, p_new, color='orange', s=100, zorder=5, label=f'개입 후 균형 ({q_new:.1f}, {p_new:.1f})')
+
+    # ✅ 잉여 계산 및 시각화
+    if q_eq > 0 and p_eq > 0:
+        cs = consumer_surplus(a, b, p_eq, q_eq)
+        ps = producer_surplus(c, d, p_eq, q_eq)
+        
+        # 소비자 잉여 (수요곡선 아래, 균형가격 위쪽 삼각형)
+        ax.fill_between([0, q_eq], [p_eq, p_eq], [a, p_eq], 
+                       color='skyblue', alpha=0.3, label=f'소비자 잉여: {cs:.1f}')
+        
+        # 생산자 잉여 (공급곡선 위, 균형가격 아래쪽 삼각형)
+        ax.fill_between([0, q_eq], [c, c + d * q_eq], [p_eq, p_eq], 
+                       color='lightgreen', alpha=0.3, label=f'생산자 잉여: {ps:.1f}')
+
+        # DWL 계산 (정부개입이 있는 경우)
+        if tax != 0 or subsidy != 0:
+            gov_revenue = tax * q_new if tax else -subsidy * q_new if subsidy else 0
+            cs_new = consumer_surplus(a, b, p_new, q_new)
+            ps_new = producer_surplus(c, d, p_new, q_new)
+            
+            total_original = cs + ps
+            total_new = cs_new + ps_new + gov_revenue
+            dwl = total_original - total_new
+            
+            if dwl > 0:
+                ax.text(q_eq * 0.7, p_eq * 1.1, f'DWL: {dwl:.1f}', 
+                       color='red', fontsize=10, weight='bold')
+
+    # 가격통제 효과
+    if price_control_type in ['ceiling', 'floor'] and price_control is not None:
+        ax.axhline(price_control, color='darkred', linestyle=':', linewidth=2,
+                   label=f'{"최고가격제" if price_control_type=="ceiling" else "최저가격제"}: {price_control}')
+        
+        surplus_type, amount = calculate_surplus_shortage(a, b, c, d, price_control)
+        ax.text(max_q * 0.1, price_control + 2, f'{surplus_type}: {amount:.1f}', 
+                fontsize=10, color='darkred', weight='bold')
+
+    # 곡선 방정식 표시 (디버깅용)
+    ax.text(0.02, 0.95, f'수요곡선: P = {a:.1f} - {b:.1f}Q', transform=ax.transAxes, 
+            fontsize=9, bbox=dict(boxstyle="round,pad=0.3", facecolor="lightblue"))
+    ax.text(0.02, 0.90, f'공급곡선: P = {c:.1f} + {d:.1f}Q', transform=ax.transAxes, 
+            fontsize=9, bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgreen"))
+
+    ax.set_xlabel('수량 (Q)')
+    ax.set_ylabel('가격 (P)')
+    ax.set_title('갑국 상품 A 시장 시뮬레이션')
+    ax.legend(loc='upper right')
+    ax.grid(True, alpha=0.3)
+    
+    # 축 범위 설정
+    ax.set_xlim(0, max_q * 1.2)
+    ax.set_ylim(0, max(a, supply_prices.max()) * 1.1)
+
+# ✅ GUI 구현
+def run_gui():
+    def on_submit():
+        try:
+            vals = {k: float(entries[k].get()) for k in entries}
+            control_type = control_type_var.get()
+            control_value = float(control_price_entry.get()) if control_type != 'none' else None
+            
+            simulate_market(ax,
+                            vals['수요 Q1'], vals['수요 P1'], vals['수요 Q2'], vals['수요 P2'],
+                            vals['공급 Q1'], vals['공급 P1'], vals['공급 Q2'], vals['공급 P2'],
+                            vals['세금'], vals['보조금'],
+                            control_type if control_type != 'none' else None, control_value)
+            canvas.draw()
+        except Exception as e:
+            messagebox.showerror("입력 오류", f"다음 오류가 발생했습니다:\n{e}")
+
+    root = tk.Tk()
+    root.title("시장 시뮬레이션 입력")
+    root.geometry("1400x800")
+
+    entries = {}
+    labels = ['수요 Q1', '수요 P1', '수요 Q2', '수요 P2', '공급 Q1', '공급 P1', '공급 Q2', '공급 P2', '세금', '보조금']
+    defaults = [0, 100, 50, 0, 0, 0, 50, 100, 0, 0]  # 더 명확한 기본값
+    
+    for i, label in enumerate(labels):
+        tk.Label(root, text=label).grid(row=i, column=0, sticky='w', padx=5, pady=2)
+        entry = tk.Entry(root)
+        entry.insert(0, str(defaults[i]))
+        entry.grid(row=i, column=1, padx=5, pady=2)
+        entries[label] = entry
+
+    # 가격통제 옵션
+    tk.Label(root, text='정부개입').grid(row=10, column=0, sticky='w', padx=5, pady=2)
+    control_type_var = tk.StringVar(value='none')
+    control_type_combo = ttk.Combobox(root, textvariable=control_type_var, 
+                                      values=['none', 'ceiling', 'floor'], state='readonly')
+    control_type_combo.grid(row=10, column=1, padx=5, pady=2)
+
+    tk.Label(root, text='가격통제').grid(row=11, column=0, sticky='w', padx=5, pady=2)
+    control_price_entry = tk.Entry(root)
+    control_price_entry.insert(0, '0')
+    control_price_entry.grid(row=11, column=1, padx=5, pady=2)
+
+    tk.Button(root, text="시뮬레이션 실행", command=on_submit).grid(row=12, columnspan=2, pady=10)
+
+    fig, ax = plt.subplots(figsize=(12, 8))
+    canvas = FigureCanvasTkAgg(fig, master=root)
+    canvas.get_tk_widget().grid(row=0, column=2, rowspan=13, padx=10, pady=10)
+
+    # 초기 실행
+    on_submit()
+
+    root.mainloop()
+
+if __name__ == '__main__':
+    run_gui()
